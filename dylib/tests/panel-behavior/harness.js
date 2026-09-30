@@ -25,8 +25,10 @@ const FORMS = {
   statement: { arg: 'statement', react: 'R0', barrel: 'B0' },
 };
 
-function panel(emit, form) {
-  const raw = execFileSync(emit, [form], { encoding: 'utf8' }).trim();
+// `fex` stands in for the runner the hook reports, which the payload reads as one byte.
+function panel(emit, form, { fex = false } = {}) {
+  const raw = execFileSync(emit, [form], { encoding: 'utf8' }).trim()
+    .replace(/\u000e/g, fex ? '1' : '0');
   const src = form === 'component'
     ? 'var ' + raw.replace(/,$/, '')
     : expand(raw).replace(/;$/, '');

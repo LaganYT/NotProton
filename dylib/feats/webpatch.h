@@ -7,6 +7,10 @@
 
 int np_webpatch_should_patch(const char *path);
 
+// Whether the current runner runs games through FEX, which decides the CrossOver options
+// the panel offers. Read by the next transform; the default is the Rosetta build.
+void np_webpatch_set_runner_fex(int on);
+
 // The compat UIs, named so a caller can compare against the table rather than a literal
 // of its own that a rename would leave behind. forcetool calls SpecifyCompatTool straight
 // out; selecttool reads its list from the CompatManager routes.
