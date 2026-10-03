@@ -8,12 +8,16 @@ if (!emit) { console.error('usage: fex.js <emit>'); process.exit(2); }
 
 const AVX = 'Advertise AVX2 to Rosetta';
 
+// One FEX tool and one Rosetta tool installed side by side, as the hook would list them.
+const FEX_TOOLS = ['notproton-fex'];
+
 let failed = 0;
 for (const form of Object.keys(FORMS)) {
   for (const fex of [false, true]) {
-    const { render: P, written } = panel(emit, form, { fex });
+    const { render: P, written } = panel(emit, form, { fexTools: FEX_TOOLS });
     const t = runner(`${form}, ${fex ? 'FEX' : 'Rosetta'}`);
-    const nodes = opts => walk(P({ details: details(opts) }));
+    const tool = fex ? 'notproton-fex' : 'notproton-rosetta';
+    const nodes = opts => walk(P({ details: details(opts, { strCompatToolName: tool }) }));
     const toggles = ns => ns.filter(x => x.type === 'Toggle').map(x => x.props.label);
     const backends = ns => ns.find(x => x.type === 'Dropdown').props.rgOptions.map(o => o.data);
     const note = ns => ns.some(x => x.props.className === 'MSCXNote');
@@ -56,6 +60,17 @@ for (const form of Object.keys(FORMS)) {
     r.find(x => x.type === 'Toggle' && x.props.label === 'Metal HUD').props.onChange(true);
     t.ok(written[written.length - 1].opts.includes('ROSETTA_ADVERTISE_AVX=1'),
          'editing another row keeps the AVX2 value');
+    failed += t.failed;
+  }
+
+  // A game with no tool name runs under the first tool, which the hook lists as "".
+  for (const first of [false, true]) {
+    const { render: P } = panel(emit, form, { fexTools: first ? ['', ...FEX_TOOLS] : FEX_TOOLS });
+    const t = runner(`${form}, unmapped, first tool ${first ? 'FEX' : 'Rosetta'}`);
+    const r = walk(P({ details: details('', { strCompatToolName: '' }) }));
+    const offered = r.find(x => x.type === 'Dropdown').props.rgOptions.map(o => o.data);
+    t.ok(offered.includes('d3dmetal') === !first,
+         `D3DMetal is ${first ? 'not ' : ''}offered (${offered})`);
     failed += t.failed;
   }
 }

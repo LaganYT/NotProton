@@ -2,6 +2,7 @@
 #include "webpatch.h"
 #include "../util/log.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -15,14 +16,21 @@
 #define NP_C8 "\010"
 #define NP_CAP_MAX 8
 
-// Not a capture: a replacement byte that expands to 1 when the current runner runs
-// games through FEX and 0 otherwise.
+// Not a capture: a replacement byte that expands to a JS array of the compat tools that
+// run games through FEX.
 #define NP_FEX "\016"
 
-static int g_runner_fex;
+static char g_fex_tools[1024] = "[]";
 
-void np_webpatch_set_runner_fex(int on) {
-    g_runner_fex = on != 0;
+void np_webpatch_set_fex_tools(const char *js_array) {
+    size_t n = js_array ? strlen(js_array) : 0;
+    if (n < 2 || n >= sizeof(g_fex_tools) || js_array[0] != '[' || js_array[n - 1] != ']'
+        || memchr(js_array + 1, ']', n - 2)) {
+        NP_WARN("webpatch: the FEX tool list is not an array, so every tool keeps "
+                "the Rosetta options");
+        js_array = "[]";
+    }
+    snprintf(g_fex_tools, sizeof(g_fex_tools), "%s", js_array);
 }
 
 typedef struct {
@@ -50,8 +58,10 @@ static size_t match_at(const char *src, size_t len, size_t pos,
     for (const char *f = find; *f; f++) {
         // Only replacements carry it, matched here so a patched chunk can be checked.
         if (*f == NP_FEX[0]) {
-            if (s >= len || (src[s] != '0' && src[s] != '1')) return 0;
-            s++;
+            if (s >= len || src[s] != '[') return 0;
+            const char *end = memchr(src + s, ']', len - s);
+            if (!end) return 0;
+            s = (size_t)(end - src) + 1;
             continue;
         }
         int ci = cap_index((unsigned char)*f);
@@ -110,7 +120,7 @@ static int out_put(np_out_t *o, const char *p, size_t n) {
 static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     for (const char *r = replace; *r; r++) {
         if (*r == NP_FEX[0]) {
-            if (!out_put(o, g_runner_fex ? "1" : "0", 1)) return 0;
+            if (!out_put(o, g_fex_tools, strlen(g_fex_tools))) return 0;
             continue;
         }
         int ci = cap_index((unsigned char)*r);
@@ -136,11 +146,11 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
 // The FEX build runs arm64 Wine, so D3DMetal (x86_64 only) and its DLSS flag cannot
 // load, and Rosetta, which reads ROSETTA_ADVERTISE_AVX, never runs. Those controls
 // are hidden there, except that a game already set to D3DMetal keeps the entry and a
-// note, so the page does not claim a backend the game is not getting. fx is the only
-// place that decides FEX, so a per-game tool choice can replace it later.
+// note, so the page does not claim a backend the game is not getting. fx follows the
+// tool the game is set to, so each game gets the options of its own build.
 #define NP_CX_OPTIONS_BODY(ARG, RT, BARREL) \
     ARG "=>{" \
-    "const t=" ARG ".details,o=t.strLaunchOptions||\"\",fx=" NP_FEX "===1," \
+    "const t=" ARG ".details,o=t.strLaunchOptions||\"\",fx=" NP_FEX ".indexOf(t.strCompatToolName||\"\")>=0," \
     "g=k=>{const p=o.split(\" \").find(x=>x.indexOf(k+\"=\")===0);return p?p.slice(k.length+1):\"\"}," \
     "s=ps=>{const a=o.split(\" \").filter(x=>x&&!ps.some(p=>x.indexOf(p[0]+\"=\")===0))," \
     "v=ps.filter(p=>p[1]).map(p=>p[0]+\"=\"+p[1]);" \

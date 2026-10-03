@@ -3,6 +3,7 @@
 // not modified, to keep the Steam bootstrap happy.
 
 #include "../feats/webpatch.h"
+#include "../feats/compat.h"
 #include "../feats/compatsvc.h"
 #include "../util/file.h"
 #include "../util/log.h"
@@ -96,21 +97,6 @@ static int spill_to_temp(const char *bytes, size_t len) {
     return fd;
 }
 
-// The same test compat_run.sh makes: an arm64 loader and wineserver in the current
-// runner mean games run on the FEX side.
-static int runner_is_fex(void) {
-    const char *home = np_home_dir();
-    if (!home)
-        return 0;
-
-    char loader[1024], server[1024];
-    np_support_path(loader, sizeof(loader), home,
-                    "runners/current/lib/wine/aarch64-unix/wine.app/Contents/MacOS/wine");
-    np_support_path(server, sizeof(server), home,
-                    "runners/current/CrossOver-Hosted Application/wineserver-arm64");
-    return access(loader, X_OK) == 0 && access(server, X_OK) == 0;
-}
-
 // Read `path`, apply the compat gates, and return a rewound anonymous fd holding
 // the patched bytes. -1 falls the caller through to the real file, which happens
 // when the read fails or the gates are absent/missing. Safety.
@@ -127,8 +113,10 @@ static int open_patched(const char *path) {
 
     size_t patched_len = 0;
     const char *shape = NULL;
-    int fex = runner_is_fex();
-    np_webpatch_set_runner_fex(fex);
+    char fex[1024];
+    if (np_compat_fex_tools_js(fex, sizeof(fex)) != 0)
+        snprintf(fex, sizeof(fex), "[]");
+    np_webpatch_set_fex_tools(fex);
     char *patched = np_webpatch_transform((const uint8_t *)raw, raw_len, &patched_len,
                                           &shape);
     free(raw);
@@ -147,8 +135,7 @@ static int open_patched(const char *path) {
     if (fd < 0)
         return -1;
 
-    NP_LOG_FIRST("webpatch: served patched compat chunk (%s, %s runner)", path,
-                 fex ? "FEX" : "Rosetta");
+    NP_LOG_FIRST("webpatch: served patched compat chunk (%s, FEX tools %s)", path, fex);
     return fd;
 }
 
