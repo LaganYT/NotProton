@@ -282,17 +282,21 @@ spawn-live: $(TARGET)
 	  -o $$tmp/steam_osx $(SPAWN_LIVE)/driver.c || exit 1; \
 	cp $$tmp/steam_osx $$tmp/inert; cp $$tmp/child $$tmp/steam_osx_child; \
 	cp $$tmp/child $$tmp/sub/steam_osx; \
+	cp $$tmp/steam_osx "$$tmp/Steam Helper"; cp $$tmp/child "$$tmp/sub/Steam Helper"; \
 	fail=0; \
 	for spec in "inert:child:1" "steam_osx:child:0" \
-	            "steam_osx:steam_osx_child:0" "steam_osx:sub/steam_osx:1"; do \
-		drv=$${spec%%:*}; rest=$${spec#*:}; kid=$${rest%:*}; want=$${rest##*:}; \
-		got=$$(DYLD_INSERT_LIBRARIES=$$PWD/$(TARGET) $$tmp/$$drv $$tmp/$$kid 2>/dev/null \
-		       | grep -c "^DYLD_INSERT_LIBRARIES=") || true; \
+	            "steam_osx:steam_osx_child:0" "steam_osx:sub/steam_osx:1" \
+	            "steam_osx:sub/Steam Helper:1" "Steam Helper:child:0" \
+	            "Steam Helper:sub/Steam Helper:1" "Steam Helper:child:1:--type=renderer"; do \
+		drv=$${spec%%:*}; rest=$${spec#*:}; kid=$${rest%%:*}; rest=$${rest#*:}; \
+		want=$${rest%%:*}; arg=$${rest#*:}; [ "$$arg" = "$$rest" ] && arg=""; \
+		got=$$(DYLD_INSERT_LIBRARIES=$$PWD/$(TARGET) "$$tmp/$$drv" "$$tmp/$$kid" $$arg 2>/dev/null \
+		       | grep -c "/notproton.dylib$$") || true; \
 		if [ "$$got" != "$$want" ]; then \
-			echo "$$drv -> $$kid: insert present $$got, wanted $$want"; fail=1; fi; \
+			echo "$$drv $$arg -> $$kid: insert present $$got, wanted $$want"; fail=1; fi; \
 	done; \
 	if [ $$fail -ne 0 ]; then exit 1; fi; \
-	echo "==> spawn live: the hook lands, steam_osx keeps the insert, other children do not"
+	echo "==> spawn live: the hook lands, steam_osx and Steam Helper keep the insert, other children do not"
 
 APP_TESTS := app/Tests
 
