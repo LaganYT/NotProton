@@ -78,7 +78,7 @@ static int shortcut_app_id(const char *app, char *id, size_t size) {
                 const char *digits = open + sizeof(RUN_SH_OPEN) - 1;
                 size_t n = strspn(digits, "0123456789");
                 const char *rest = digits + n;
-                if (n > 0 && n < size && (*rest == '\0' || strcmp(rest, "\n") == 0)) {
+                if (n > 0 && n < size && rest[strspn(rest, "\n")] == '\0') {
                     memcpy(id, digits, n);
                     id[n] = '\0';
                     ok = 1;

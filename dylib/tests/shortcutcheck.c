@@ -29,7 +29,8 @@ static void write_at(const char *rel, const char *content) {
 static void shortcut(const char *name, const char *id) {
     char rel[PATH_MAX], run[256];
     snprintf(rel, sizeof(rel), "Applications/%s.app/Contents/MacOS/run.sh", name);
-    snprintf(run, sizeof(run), "%s\nopen steam://run/%s\n", RUN_SH_HEAD, id);
+    // Byte for byte what Steam writes, trailing blank line included.
+    snprintf(run, sizeof(run), "%s\nopen steam://run/%s\n\n", RUN_SH_HEAD, id);
     write_at(rel, run);
 }
 
