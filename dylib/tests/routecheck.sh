@@ -53,6 +53,39 @@ is "and the loader is not called there" "" "$(calls)"
 route waitforexitandrun "$url"
 is "a protocol URL falls through too" "fell through foreground=1" "$(out)"
 is "and the loader is not called there either" "" "$(calls)"
+for target in "/g/Assassin's Creed/AssassinsCreed_Dx10.exe" \
+    '/g/MECCHA CHAMELEON/Chameleon/Binaries/Win64/PenguinHotel-Win64-Shipping.exe' \
+    '/mods/Mod Engine 2/launchmod_eldenring.bat' \
+    '/mods/Mod Engine 2/modengine2_launcher.exe'; do
+  route waitforexitandrun "$target"
+  is "custom target stays on the game route: $target" "fell through foreground=1" "$(out)"
+  is "custom target does not launch as a helper" "" "$(calls)"
+done
+
+echo "== the game launcher preserves custom targets, arguments, prefix and identity"
+launch=$(sed -n '/^set -- --args "\$shim_exe" "\$@"$/,/^lsregister=/p' "$SRC" | sed '$d')
+[ -n "$launch" ] || { echo "FAIL: the game launcher arguments not found"; exit 1; }
+for target in "/g/Assassin's Creed/AssassinsCreed_Dx10.exe" \
+    '/mods/Mod Engine 2/launchmod_eldenring.bat' \
+    '/mods/Mod Engine 2/modengine2_launcher.exe'; do
+  forwarded=$(env -i PATH="$PATH" WINEPREFIX='/library/compatdata/1245620/pfx' \
+    STEAM_COMPAT_DATA_PATH='/library/compatdata/1245620' STEAM_COMPAT_APP_ID=1245620 \
+    SteamAppId=1245620 SteamGameId=1245620 launch="$launch" shim_exe="$shim" \
+    sh -ec 'eval "$launch"; printf "[%s]\n" "$@"' sh "$target" -t er -c 'Z:\mods\config file.toml')
+  for value in '--args' "$shim" "$target" '-t' 'er' '-c' 'Z:\mods\config file.toml' \
+      'WINEPREFIX=/library/compatdata/1245620/pfx' \
+      'STEAM_COMPAT_DATA_PATH=/library/compatdata/1245620' \
+      'STEAM_COMPAT_APP_ID=1245620' 'SteamAppId=1245620' 'SteamGameId=1245620'; do
+    if printf '%s\n' "$forwarded" | grep -Fx -- "[$value]" >/dev/null; then
+      ok "launcher forwards [$value]"
+    else
+      bad "launcher forwards [$value]" "[$value]" "$forwarded"
+    fi
+  done
+  is "launcher keeps the target and its arguments together" \
+    "$(printf '[%s]\n' --args "$shim" "$target" -t er -c 'Z:\mods\config file.toml')" \
+    "$(printf '%s\n' "$forwarded" | sed -n '/^\[--args\]$/,$p')"
+done
 
 echo "== helpers go through the shim"
 route run /c/legacycompat/iscriptevaluator.exe 'legacycompat\evaluatorscript_1222670.vdf'
