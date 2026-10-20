@@ -19,7 +19,7 @@ const TOGGLES = {
 const PANEL_KEYS = ['CX_GRAPHICS_BACKEND', 'MTL_HUD_ENABLED', 'D3DM_ENABLE_METALFX', 'DXMT_ENABLE_NVEXT',
   'DXMT_METALFX_SPATIAL_SWAPCHAIN', 'DXMT_CONFIG', 'ROSETTA_ADVERTISE_AVX', 'WINEMSYNC', 'NOTPROTON_RETINA',
   'NOTPROTON_RAW_CONTROLLERS', 'NOTPROTON_DISABLE_HIDRAW'];
-const OTHER_KEYS = ['WINEDEBUG', 'DXVK_HUD', 'FOO'];
+const OTHER_KEYS = ['WINEDEBUG', 'DXVK_HUD', 'FOO', 'NOTPROTON_EXE', 'NOTPROTON_START_DIR'];
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'np-shell-'));
 const probe = path.join(dir, 'probe');
@@ -58,7 +58,8 @@ function view(form, options) {
        .forEach(n => { toggles[TOGGLES[n.props.label]] = n; });
   const backend = nodes.find(n => n.type === 'Dropdown' && n.props.rgOptions.some(o => o.data === 'dxvk'));
   const upscale = nodes.find(n => n.type === 'Dropdown' && n.props.rgOptions.some(o => o.data === '1.5'));
-  return { toggles, backend, upscale, written: P.written };
+  return { toggles, backend, upscale, written: P.written, files: P.files, dialogs: P.dialogs,
+           buttons: nodes.filter(n => n.type === 'Button') };
 }
 
 function dxmt(conf) {
@@ -168,6 +169,9 @@ const CASES = [
   'MTL_HUD_ENABLED=1 "%command%"',
   'MTL_HUD_ENABLED=1 \\%command%',
   '  MTL_HUD_ENABLED=1   %command%  --offline  ',
+  "NOTPROTON_EXE='/Users/test/Games/Mod Engine 2/launchmod_eldenring.bat' %command%",
+  "NOTPROTON_EXE='/Users/test/Jeux/Café \"d\" l'\\''été/ゲーム.exe' MTL_HUD_ENABLED=1 %command% -t er -c 'Z:\\a b\\c.toml'",
+  "CX_GRAPHICS_BACKEND=dxmt NOTPROTON_EXE=/g/AssassinsCreed_Dx10.exe NOTPROTON_START_DIR='/g/a b' %command% --offline",
 ];
 
 let failed = 0;
@@ -203,6 +207,77 @@ for (const shell of shells) {
     failed += t.failed;
   }
 }
+
+// The Executable rows, driven through Steam's file dialog and read back from what the game gets.
+const TARGETS = ['/Users/test/Games/Mod Engine 2/launchmod_eldenring.bat',
+  "/Users/test/Jeux/Café \"d\" l'été/ゲーム.EXE", '/g/AssassinsCreed_Dx10.exe', '/g/$HOME `id` \\x.bat'];
+const STARTS = ['', '-windowed', 'MTL_HUD_ENABLED=1 %command% --offline',
+  'WINEDEBUG="a b" gamemoderun %command% -t er',
+  '"/Users/test/Games/Mod Engine 2/launchmod_eldenring.bat"'];
+for (const shell of shells) {
+  for (const form of Object.keys(FORMS)) {
+    const t = runner(`${path.basename(shell)} ${form} executable`);
+    const click = (v, n, file) => {
+      if (file !== undefined) v.files.push(file);
+      v.buttons[n].props.onClick();
+      return v.written.length ? v.written[v.written.length - 1].opts : null;
+    };
+    for (const start of STARTS) {
+      const before = launch(shell, start);
+      let v = view(form, start);
+      t.ok(v.buttons.length === 1, `${JSON.stringify(start)}: only Browse shows without a target`);
+      t.ok(click(v, 0, '') === null, `${JSON.stringify(start)}: a cancelled dialog writes nothing`);
+      for (const exe of TARGETS) {
+        const what = `${JSON.stringify(start)} + ${JSON.stringify(exe)}`;
+        v = view(form, start);
+        const picked = click(v, 0, exe);
+        t.ok(JSON.stringify(v.dialogs[0].rgFilters[0].rFilePatterns) === '["*.exe","*.bat"]',
+             `${what}: the dialog offers .exe and .bat`);
+        const run = launch(shell, picked);
+        t.ok(run.length === before.length && run.length > 0, `${what}: the game runs once -> ${JSON.stringify(picked)}`);
+        if (!run.length || run.length !== before.length) continue;
+        t.ok(run[0].env.NOTPROTON_EXE === exe && !('NOTPROTON_START_DIR' in run[0].env),
+             `${what}: the run script gets NOTPROTON_EXE ${JSON.stringify(run[0].env.NOTPROTON_EXE)}`);
+        t.ok(JSON.stringify(run[0].argv) === JSON.stringify(before[0].argv),
+             `${what}: game arguments kept ${JSON.stringify(run[0].argv)}`);
+        t.ok(['WINEDEBUG', 'MTL_HUD_ENABLED'].every(k => run[0].env[k] === before[0].env[k]),
+             `${what}: other settings kept`);
+
+        v = view(form, picked);
+        t.ok(v.buttons.length === 3, `${what}: Reset and Start In show once a target is set`);
+        const folder = exe.replace(/\/[^/]*$/, '');
+        const withDir = click(v, 2, '/tmp/start in/ü');
+        t.ok(v.dialogs[0].bChooseDirectory === true && v.dialogs[0].strInitialFile === folder,
+             `${what}: Start In opens on the target's folder`);
+        const dirRun = launch(shell, withDir);
+        t.ok(dirRun.length && dirRun[0].env.NOTPROTON_START_DIR === '/tmp/start in/ü' &&
+             dirRun[0].env.NOTPROTON_EXE === exe, `${what}: Start In is set and the target kept`);
+
+        v = view(form, withDir);
+        const cancelled = click(v, 0, undefined) === null;
+        t.ok(cancelled && v.buttons.length === 4, `${what}: both rows offer Reset once both are set`);
+        const dirReset = launch(shell, click(v, 3));
+        t.ok(dirReset.length && !('NOTPROTON_START_DIR' in dirReset[0].env) && dirReset[0].env.NOTPROTON_EXE === exe,
+             `${what}: resetting Start In keeps the target`);
+
+        v = view(form, withDir);
+        const again = launch(shell, click(v, 0, '/g/other.exe'));
+        t.ok(again.length && again[0].env.NOTPROTON_EXE === '/g/other.exe' && !('NOTPROTON_START_DIR' in again[0].env),
+             `${what}: choosing another target drops the old Start In`);
+
+        v = view(form, withDir);
+        const reset = click(v, 1);
+        const resetRun = launch(shell, reset);
+        t.ok(resetRun.length === before.length && resetRun.every((r, n) =>
+               !('NOTPROTON_EXE' in r.env) && !('NOTPROTON_START_DIR' in r.env) &&
+               JSON.stringify(r.argv) === JSON.stringify(before[n].argv)),
+             `${what}: Reset launches the game as before -> ${JSON.stringify(reset)}`);
+      }
+    }
+    failed += t.failed;
+  }
+}
+
 fs.rmSync(dir, { recursive: true, force: true });
 console.log(failed ? `\n${failed} failure(s)` : `\npanel agrees with ${shells.join(' and ')}`);
 process.exit(failed ? 1 : 0);

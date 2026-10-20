@@ -53,39 +53,56 @@ is "and the loader is not called there" "" "$(calls)"
 route waitforexitandrun "$url"
 is "a protocol URL falls through too" "fell through foreground=1" "$(out)"
 is "and the loader is not called there either" "" "$(calls)"
-for target in "/g/Assassin's Creed/AssassinsCreed_Dx10.exe" \
-    '/g/MECCHA CHAMELEON/Chameleon/Binaries/Win64/PenguinHotel-Win64-Shipping.exe' \
-    '/mods/Mod Engine 2/launchmod_eldenring.bat' \
-    '/mods/Mod Engine 2/modengine2_launcher.exe'; do
-  route waitforexitandrun "$target"
-  is "custom target stays on the game route: $target" "fell through foreground=1" "$(out)"
-  is "custom target does not launch as a helper" "" "$(calls)"
+echo "== NOTPROTON_EXE runs another program in the game's place"
+pick=$(sed -n '/^# The Compatibility panel sets NOTPROTON_EXE/,/^fi$/p' "$SRC")
+args=$(sed -n '/^set -- --args "\$shim_exe" "\$@"$/,/^lsregister=/p' "$SRC" | sed '$d')
+[ -n "$pick" ] && [ -n "$args" ] || { echo "FAIL: the launch target or launcher arguments not found"; exit 1; }
+mkdir -p "$work/Mod Engine 2" "$work/Jeux/Café l'été" "$work/elsewhere"
+: > "$work/Mod Engine 2/launchmod_eldenring.bat"
+: > "$work/Jeux/Café l'été/ゲーム.exe"
+# Runs the target block and the launcher arguments, from the game folder Steam starts in.
+pick() {
+	(cd /tmp && env -i PATH="$PATH" HOME="$HOME" log="$work/log" shim_exe="$shim" \
+		target="$1" pick="$pick" args="$args" WINEPREFIX=/lib/compatdata/1245620/pfx \
+		STEAM_COMPAT_DATA_PATH=/lib/compatdata/1245620 STEAM_COMPAT_APP_ID=1245620 \
+		SteamAppId=1245620 SteamGameId=1245620 MTL_HUD_ENABLED=1 \
+		${exe+NOTPROTON_EXE="$exe"} ${dir+NOTPROTON_START_DIR="$dir"} \
+		sh -ec 'show_alert() { echo "alert: $1"; }
+			eval "$pick"; eval "$args"; printf "[%s]\n" "$@"' sh "$@") 2>&1
+}
+has() { if printf '%s\n' "$2" | grep -Fx -- "[$3]" >/dev/null; then ok "$1"; else bad "$1" "[$3]" "$2"; fi; }
+tail_of() { printf '%s\n' "$1" | sed -n '/^\[--args\]$/,$p'; }
+
+unset exe dir
+out=$(pick /g/eldenring.exe -windowed)
+is "without NOTPROTON_EXE the game runs as before" \
+	"$(printf '[%s]\n' --args "$shim" /g/eldenring.exe -windowed)" "$(tail_of "$out")"
+has "and starts where Steam started it" "$out" "NOTPROTON_GAME_CWD=$(cd /tmp && pwd -P)"
+
+for exe in "$work/Mod Engine 2/launchmod_eldenring.bat" "$work/Jeux/Café l'été/ゲーム.exe"; do
+	out=$(pick /g/start_protected_game.exe -t er -c 'Z:\mods\config file.toml')
+	is "the target replaces the game and keeps its arguments: $exe" \
+		"$(printf '[%s]\n' --args "$shim" "$exe" -t er -c 'Z:\mods\config file.toml')" "$(tail_of "$out")"
+	has "it starts in the target's folder" "$out" "NOTPROTON_GAME_CWD=${exe%/*}"
+	for value in WINEPREFIX=/lib/compatdata/1245620/pfx STEAM_COMPAT_DATA_PATH=/lib/compatdata/1245620 \
+			STEAM_COMPAT_APP_ID=1245620 SteamAppId=1245620 SteamGameId=1245620 MTL_HUD_ENABLED=1; do
+		has "it keeps $value" "$out" "$value"
+	done
 done
 
-echo "== the game launcher preserves custom targets, arguments, prefix and identity"
-launch=$(sed -n '/^set -- --args "\$shim_exe" "\$@"$/,/^lsregister=/p' "$SRC" | sed '$d')
-[ -n "$launch" ] || { echo "FAIL: the game launcher arguments not found"; exit 1; }
-for target in "/g/Assassin's Creed/AssassinsCreed_Dx10.exe" \
-    '/mods/Mod Engine 2/launchmod_eldenring.bat' \
-    '/mods/Mod Engine 2/modengine2_launcher.exe'; do
-  forwarded=$(env -i PATH="$PATH" WINEPREFIX='/library/compatdata/1245620/pfx' \
-    STEAM_COMPAT_DATA_PATH='/library/compatdata/1245620' STEAM_COMPAT_APP_ID=1245620 \
-    SteamAppId=1245620 SteamGameId=1245620 launch="$launch" shim_exe="$shim" \
-    sh -ec 'eval "$launch"; printf "[%s]\n" "$@"' sh "$target" -t er -c 'Z:\mods\config file.toml')
-  for value in '--args' "$shim" "$target" '-t' 'er' '-c' 'Z:\mods\config file.toml' \
-      'WINEPREFIX=/library/compatdata/1245620/pfx' \
-      'STEAM_COMPAT_DATA_PATH=/library/compatdata/1245620' \
-      'STEAM_COMPAT_APP_ID=1245620' 'SteamAppId=1245620' 'SteamGameId=1245620'; do
-    if printf '%s\n' "$forwarded" | grep -Fx -- "[$value]" >/dev/null; then
-      ok "launcher forwards [$value]"
-    else
-      bad "launcher forwards [$value]" "[$value]" "$forwarded"
-    fi
-  done
-  is "launcher keeps the target and its arguments together" \
-    "$(printf '[%s]\n' --args "$shim" "$target" -t er -c 'Z:\mods\config file.toml')" \
-    "$(printf '%s\n' "$forwarded" | sed -n '/^\[--args\]$/,$p')"
+exe="$work/Mod Engine 2/launchmod_eldenring.bat" dir="$work/elsewhere"
+has "NOTPROTON_START_DIR picks another folder" "$(pick /g/game.exe)" "NOTPROTON_GAME_CWD=$work/elsewhere"
+
+for case in "$work/missing.exe|" "relative.exe|" "$work/Mod Engine 2/launchmod_eldenring.bat|$work/gone"; do
+	exe="${case%|*}"
+	if [ -n "${case#*|}" ]; then dir="${case#*|}"; else unset dir; fi
+	out=$(pick /g/game.exe || echo "status=$?")
+	is "a missing target or folder stops with an alert: $case" \
+		"alert: The chosen executable could not be found|status=1" "$(printf '%s\n' "$out" | paste -sd '|' -)"
+	if grep -F "launch target missing: [$exe]" "$work/log" >/dev/null; then ok "and is logged"
+	else bad "and is logged" "$exe" "$(cat "$work/log")"; fi
 done
+unset exe dir
 
 echo "== helpers go through the shim"
 route run /c/legacycompat/iscriptevaluator.exe 'legacycompat\evaluatorscript_1222670.vdf'

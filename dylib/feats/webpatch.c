@@ -290,9 +290,14 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     ".MSCXPanel .MSCXRow{display:flex;flex-direction:row;padding:9px;margin:0;" \
     "color:#dfe3e6;background:rgba(59,63,72,.5);border-radius:3px}" \
     ".MSCXPanel .MSCXRow:hover{box-shadow:0 6px 8px 0 rgba(0,0,0,.16)}" \
+    ".MSCXPanel .MSCXPath{align-items:center;gap:8px;margin-bottom:2px}" \
+    ".MSCXPanel .MSCXPathText{flex:1;min-width:0;font-size:13px;overflow-wrap:anywhere}" \
+    ".MSCXPanel .MSCXDefault{color:#8b929a}" \
+    ".MSCXPanel button.MSCXButton{width:auto;flex:none;margin:0;padding:0 14px;font-size:13px;line-height:28px}" \
     ".MSCXNoBottomGap{margin-bottom:0}\""
 
 // FEX runs arm64 Wine, which has no D3DMetal and never runs under Rosetta.
+// The Executable rows write NOTPROTON_EXE and NOTPROTON_START_DIR, which compat_run.sh reads.
 #define NP_CX_OPTIONS_BODY(ARG, RT, BARREL) \
     ARG "=>{" \
     "const t=" ARG ".details,o=t.strLaunchOptions||\"\"," \
@@ -302,6 +307,14 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "T=(ks,l,on,off)=>(0," RT ".jsx)(" BARREL ".Yh,{className:\"MSCXRow\",label:l," \
     "checked:g(ks[0])===on," \
     "onChange:v=>s(ks.map(k=>[k,v?on:(off||\"\")]))},ks[0])," \
+    "ex=g(\"NOTPROTON_EXE\"),sd=g(\"NOTPROTON_START_DIR\"),exd=ex.replace(/\\/[^\\/]*$/,\"\")||\"/\"," \
+    "pk=(q,f)=>SteamClient.System.OpenFileDialog(q).then(p=>p&&s(f(p)))," \
+    "P=(v,x,q,f,ks,k)=>(0," RT ".jsxs)(\"div\",{className:\"MSCXRow MSCXPath\",children:[" \
+    "(0," RT ".jsx)(\"div\",{className:v?\"MSCXPathText\":\"MSCXPathText MSCXDefault\",children:x})," \
+    "(0," RT ".jsx)(" BARREL ".$n,{className:\"MSCXButton\",onClick:()=>pk(q,f)," \
+    "children:npL(\"Browse...\",\"浏览…\",\"Sfoglia...\")})," \
+    "v&&(0," RT ".jsx)(" BARREL ".$n,{className:\"MSCXButton\",onClick:()=>s(ks.map(k=>[k,\"\"]))," \
+    "children:npL(\"Reset\",\"重置\",\"Ripristina\")})]},k)," \
     "bv=g(\"CX_GRAPHICS_BACKEND\"),b=fex&&\"d3dmetal\"===bv?\"\":bv," \
     "dm=!fex&&(\"\"===b||\"d3dmetal\"===b)," \
     "dx=\"\"===b||\"dxmt\"===b," \
@@ -351,7 +364,18 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "\"允许游戏直接读取控制器（可能导致 Steam Input 失效，不推荐）\"," \
     "\"Lascia che i giochi leggano direttamente i controller (pu\\u00f2 interferire con Steam Input, sconsigliato)\"),\"1\",\"\")," \
     "T([\"NOTPROTON_DISABLE_HIDRAW\"],npL(\"Disable hidraw\",\"停用 hidraw\",\"Disable hidraw\"),\"1\",\"\")" \
-    "]},\"ctl\")" \
+    "]},\"ctl\")," \
+    "(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Executable\",\"可执行文件\",\"Eseguibile\"),children:[" \
+    "P(ex,ex||npL(\"Game default\",\"游戏默认\",\"Predefinito del gioco\")," \
+    "{strTitle:npL(\"Choose a program to launch\",\"选择要启动的程序\",\"Scegli il programma da avviare\")," \
+    "rgFilters:[{strFileTypeName:npL(\"Windows programs (*.exe, *.bat)\",\"Windows 程序 (*.exe, *.bat)\"," \
+    "\"Programmi Windows (*.exe, *.bat)\"),rFilePatterns:[\"*.exe\",\"*.bat\"],bUseAsDefault:!0}]," \
+    "strInitialFile:ex||t.strInstallFolder||\"\"}," \
+    "p=>[[\"NOTPROTON_EXE\",p],[\"NOTPROTON_START_DIR\",\"\"]],[\"NOTPROTON_EXE\",\"NOTPROTON_START_DIR\"],\"exe\")," \
+    "ex&&P(sd,npL(\"Start In\",\"起始位置\",\"Avvia in\")+\": \"+(sd||exd)," \
+    "{strTitle:npL(\"Start In\",\"起始位置\",\"Avvia in\"),strInitialFile:sd||exd,bChooseDirectory:!0}," \
+    "p=>[[\"NOTPROTON_START_DIR\",p]],[\"NOTPROTON_START_DIR\"],\"dir\")" \
+    "]},\"exe\")" \
     "]})})}"
 
 #define NP_CX_OPTIONS_CAPTURE(RT, BARREL) \

@@ -29,47 +29,21 @@ Please open issue reports with any issues. PRs are welcome and encouraged.
 
 ## Launch a different executable
 
-Use the original game's **Properties > General > Launch Options** in Steam. This
-keeps the game's existing prefix, compatibility tool, and Steam identity.
+Some games and mods need another program started in place of the game, such as
+Mod Engine 2's `launchmod_eldenring.bat`. In the game's **Properties >
+Compatibility**, choose **Executable > Browse...** and pick the `.exe` or `.bat`.
+It runs in the game's own prefix, with the same compatibility tool and settings,
+and Steam still tracks it as that game. Press **Reset** to launch the game normally
+again.
 
-1. Open **Properties > Installed Files > Browse** to find the executable.
-2. Copy its full macOS path. In Finder, hold Option and choose **Copy as Pathname**.
-3. Replace the Launch Options text with that path in straight double quotes. For
-   example, to use Assassin's Creed's alternate executable:
+The program starts in its own folder, which is what scripts like Mod Engine 2's
+expect. Use **Start In** if it needs a different folder. Arguments go after
+`%command%` in the game's Launch Options.
 
-   ```text
-   "/Users/yourname/Library/Application Support/Steam/steamapps/common/Assassin's Creed/AssassinsCreed_Dx10.exe"
-   ```
-
-Put any arguments after the closing quote. Use the actual path on your Mac,
-including its capitalization. Clear Launch Options to restore the normal launch.
-
-Leave out `%command%` when replacing the executable this way. Putting a path
-before `%command%` asks that program to run Steam's original command as a wrapper;
-it does not simply select another game executable. Adding a non-Steam shortcut
-also creates a separate Steam identity and normally a separate prefix.
-
-### Batch files and Mod Engine 2
-
-The existing Wine Steam shim sends `.bat` targets to Windows shell handling. A
-batch file is a Windows script, so do not run it with macOS `/bin/sh`. Use its
-quoted absolute path in the original game's Launch Options, just as for an `.exe`:
-
-```text
-"/Users/yourname/Games/ModEngine2/launchmod_eldenring.bat"
-```
-
-The working directory still comes from Steam; selecting a file does not change
-it to that file's folder. Check scripts that use relative paths.
-[Mod Engine 2's Elden Ring batch file](https://github.com/soulsmods/ModEngine2/blob/main/installer/dist/launchmod_eldenring.bat)
-calls `.\modengine2_launcher.exe -t er -c .\config_eldenring.toml`, so those paths
-must resolve from the working directory. The launcher can also be selected
-directly, with its `-t er -c` arguments and a Windows path to the config file.
-
-The alternate Assassin's Creed executable was confirmed in
-[issue #17](https://github.com/NotProtonNot/NotProton/issues/17#issuecomment-6191449695).
-Elden Ring with Mod Engine 2 has not been verified end to end. Selecting its
-launcher does not establish that its injection or mods work under CrossOver.
+The panel stores the choice in the Launch Options, as
+`NOTPROTON_EXE='/path/to/program.exe' %command%`, with `NOTPROTON_START_DIR` for
+the folder. A path on its own in Launch Options does not replace the game: Steam
+passes it to the game as an argument.
 
 There are many people who worked on similar ideas, similar projects. I did not base NotProton on their work, but I still want to 
 give thanks to the people who came before me:
