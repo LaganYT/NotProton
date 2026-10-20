@@ -27,24 +27,6 @@ Please read NOTICE for license information.
 
 Please open issue reports with any issues. PRs are welcome and encouraged.
 
-## Launch a different executable
-
-Some games and mods need another program started in place of the game, such as
-Mod Engine 2's `launchmod_eldenring.bat`. In the game's **Properties >
-Compatibility**, choose **Executable > Browse...** and pick the `.exe` or `.bat`.
-It runs in the game's own prefix, with the same compatibility tool and settings,
-and Steam still tracks it as that game. Press **Reset** to launch the game normally
-again.
-
-The program starts in its own folder, which is what scripts like Mod Engine 2's
-expect. Use **Start In** if it needs a different folder. Arguments go after
-`%command%` in the game's Launch Options.
-
-The panel stores the choice in the Launch Options, as
-`NOTPROTON_EXE='/path/to/program.exe' %command%`, with `NOTPROTON_START_DIR` for
-the folder. A path on its own in Launch Options does not replace the game: Steam
-passes it to the game as an argument.
-
 There are many people who worked on similar ideas, similar projects. I did not base NotProton on their work, but I still want to 
 give thanks to the people who came before me:
 
