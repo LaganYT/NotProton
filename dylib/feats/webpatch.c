@@ -224,7 +224,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "const m=w=>/%command%/i.test(o.slice(w.start,w.end)),G=cs.find(c=>c.some(m));" \
     "if(!G)return{p:0,e:[]};" \
     "const n=G.findIndex(w=>m(w)||!/^[A-Za-z_]\\w*=/.test(o.slice(w.start,w.end)));" \
-    "return{p:G[0].start,e:G.slice(0,n<0?G.length:n)}})(),"
+    "return{p:G[0].start,e:G.slice(0,n<0?G.length:n),c:G.find(m)}})(),"
 
 // Rewrites KEY=value entries before %command% and leaves the rest of the text byte for byte.
 #define NP_CX_LAUNCH \
@@ -238,7 +238,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "E.e.forEach(w=>{if(ps.some(p=>o.startsWith(p[0]+\"=\",w.start))){" \
     "r+=o.slice(at,w.start);at=w.end;while(o[at]===\" \"||o[at]===\"\\t\")at++}});r+=o.slice(at)}" \
     "SteamClient.Apps.SetAppLaunchOptions(id,r.trim()===\"%command%\"?\"\":r)};" \
-    "return{g,s,k:E.e.map(w=>o.slice(w.start,w.end).split(\"=\")[0])}}"
+    "return{g,s,k:E.e.map(w=>o.slice(w.start,w.end).split(\"=\")[0]),c:E.c}}"
 
 #define NP_CX_PICK \
     "(t,n)=>{const o=t.strLaunchOptions||\"\";" \
@@ -296,8 +296,26 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     ".MSCXPanel button.MSCXButton{width:auto;flex:none;margin:0;padding:0 14px;font-size:13px;line-height:28px}" \
     ".MSCXNoBottomGap{margin-bottom:0}\""
 
+// The Executable rows write a plain sh wrapper around %command%. It swaps the argument after
+// waitforexitandrun for the chosen program and starts it from its folder or the Start In folder.
+// Only that exact wrapper is read back, and nothing is written unless %command% is a bare word.
+#define NP_CX_TARGET \
+    "(o,id)=>{" \
+    "const q=v=>\"'\"+v.replace(/'/g,\"'\\\\''\").replace(/%(?=command%)/gi,\"%'\\\"\\\"'\")+\"'\"," \
+    "h=\"sh -c \"+q('exe=$1 dir=$2 found= prev=; shift 2; for arg in \"$@\"; do shift; '+" \
+    "'if [ -z \"$found\" ] && [ \"$prev\" = waitforexitandrun ]; then arg=$exe found=1; fi; prev=$arg; set -- \"$@\" \"$arg\"; done; '+" \
+    "'[ \"$found\" ] && cd \"${dir:-${exe%/*}/}\" && exec \"$@\"')+\" sh \"," \
+    "at=o.indexOf(h)," \
+    "m=at<0?null:/^('(?:[^']|'\\\\''|'\"\"')*') ('(?:[^']|'\\\\''|'\"\"')*') %command%/.exec(o.slice(at+h.length))," \
+    "rd=v=>v.slice(1,-1).replace(/'\\\\''|'\"\"'/g,x=>x[1]===\"\\\\\"?\"'\":\"\")," \
+    "b=m?o.slice(0,at)+\"%command%\"+o.slice(at+h.length+m[0].length):o;" \
+    "return{ex:m?rd(m[1]):\"\",sd:m?rd(m[2]):\"\",write:(e,d)=>{" \
+    "const B=/%command%/i.test(b)?b:\"%command%\"+(b.trim()?\" \"+b:\"\"),c=MSCXLaunch(B,id).c;" \
+    "if(!c||!/^%command%$/i.test(B.slice(c.start,c.end)))return;" \
+    "const r=B.slice(0,c.start)+(e?h+q(e)+\" \"+q(d)+\" %command%\":\"%command%\")+B.slice(c.end);" \
+    "SteamClient.Apps.SetAppLaunchOptions(id,r.trim()===\"%command%\"?\"\":r)}}}"
+
 // FEX runs arm64 Wine, which has no D3DMetal and never runs under Rosetta.
-// The Executable rows write NOTPROTON_EXE and NOTPROTON_START_DIR, which compat_run.sh reads.
 #define NP_CX_OPTIONS_BODY(ARG, RT, BARREL) \
     ARG "=>{" \
     "const t=" ARG ".details,o=t.strLaunchOptions||\"\"," \
@@ -307,13 +325,13 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "T=(ks,l,on,off)=>(0," RT ".jsx)(" BARREL ".Yh,{className:\"MSCXRow\",label:l," \
     "checked:g(ks[0])===on," \
     "onChange:v=>s(ks.map(k=>[k,v?on:(off||\"\")]))},ks[0])," \
-    "ex=g(\"NOTPROTON_EXE\"),sd=g(\"NOTPROTON_START_DIR\"),exd=ex.replace(/\\/[^\\/]*$/,\"\")||\"/\"," \
-    "pk=(q,f)=>SteamClient.System.OpenFileDialog(q).then(p=>p&&s(f(p)))," \
-    "P=(v,x,q,f,ks,k)=>(0," RT ".jsxs)(\"div\",{className:\"MSCXRow MSCXPath\",children:[" \
+    "X=(" NP_CX_TARGET ")(o,t.unAppID),ex=X.ex,sd=X.sd,exd=ex.replace(/\\/[^\\/]*$/,\"\")||\"/\"," \
+    "pk=(q,f)=>SteamClient.System.OpenFileDialog(q).then(p=>p&&f(p))," \
+    "P=(v,x,q,f,rs,k)=>(0," RT ".jsxs)(\"div\",{className:\"MSCXRow MSCXPath\",children:[" \
     "(0," RT ".jsx)(\"div\",{className:v?\"MSCXPathText\":\"MSCXPathText MSCXDefault\",children:x})," \
     "(0," RT ".jsx)(" BARREL ".$n,{className:\"MSCXButton\",onClick:()=>pk(q,f)," \
     "children:npL(\"Browse...\",\"浏览…\",\"Sfoglia...\")})," \
-    "v&&(0," RT ".jsx)(" BARREL ".$n,{className:\"MSCXButton\",onClick:()=>s(ks.map(k=>[k,\"\"]))," \
+    "v&&(0," RT ".jsx)(" BARREL ".$n,{className:\"MSCXButton\",onClick:rs," \
     "children:npL(\"Reset\",\"重置\",\"Ripristina\")})]},k)," \
     "D=(k,l)=>(0," RT ".jsx)(" BARREL ".Yh,{className:\"MSCXRow\",label:l," \
     "checked:\"0\"!==g(k),onChange:v=>s([[k,v?\"\":\"0\"]])},k)," \
@@ -373,10 +391,10 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "rgFilters:[{strFileTypeName:npL(\"Windows programs (*.exe, *.bat)\",\"Windows 程序 (*.exe, *.bat)\"," \
     "\"Programmi Windows (*.exe, *.bat)\"),rFilePatterns:[\"*.exe\",\"*.bat\"],bUseAsDefault:!0}]," \
     "strInitialFile:ex||t.strInstallFolder||\"\"}," \
-    "p=>[[\"NOTPROTON_EXE\",p],[\"NOTPROTON_START_DIR\",\"\"]],[\"NOTPROTON_EXE\",\"NOTPROTON_START_DIR\"],\"exe\")," \
+    "p=>X.write(p,\"\"),()=>X.write(\"\",\"\"),\"exe\")," \
     "ex&&P(sd,npL(\"Start In\",\"起始位置\",\"Avvia in\")+\": \"+(sd||exd)," \
     "{strTitle:npL(\"Start In\",\"起始位置\",\"Avvia in\"),strInitialFile:sd||exd,bChooseDirectory:!0}," \
-    "p=>[[\"NOTPROTON_START_DIR\",p]],[\"NOTPROTON_START_DIR\"],\"dir\")" \
+    "p=>X.write(ex,p),()=>X.write(ex,\"\"),\"dir\")" \
     "]},\"exe\")," \
     "fex&&(0," RT ".jsx)(" BARREL ".XY,{label:\"FEX\"," \
     "children:D(\"FEX_X87REDUCEDPRECISION\"," \

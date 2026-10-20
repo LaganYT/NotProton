@@ -19,7 +19,7 @@ for (const form of Object.keys(FORMS)) {
   for (const [language, cases] of [['zh', zhCases], ['it', itCases], ['en', enCases]]) {
     const t = (...labels) => labels[lang[language]];
     for (const globals of cases) {
-      const { render, written } = panel(emit, form, globals);
+      const { render, files, written } = panel(emit, form, globals);
       const nodes = walk(render({ details: details('CX_GRAPHICS_BACKEND=dxmt %command%') }));
       const dropdowns = nodes.filter(n => n.type === 'Dropdown');
       assert.equal(dropdowns[0].props.rgOptions[0].label, t('Automatic', '自动', 'Automatico'));
@@ -35,7 +35,10 @@ for (const form of Object.keys(FORMS)) {
       assert(nodes.some(n => n.props.label === t('Disable hidraw', '停用 hidraw', 'Disable hidraw')));
       assert(nodes.some(n => n.props.label === t('Executable', '可执行文件', 'Eseguibile')));
       assert(nodes.some(n => n.props.children === t('Game default', '游戏默认', 'Predefinito del gioco')));
-      const target = walk(render({ details: details("NOTPROTON_EXE=/g/a.exe %command%") }));
+      const browse = nodes.find(n => n.type === 'Button');
+      files.push('/g/a.exe');
+      browse.props.onClick();
+      const target = walk(render({ details: details(written.at(-1).opts) }));
       assert.deepEqual(target.filter(n => n.type === 'Button').map(n => n.props.children),
         [t('Browse...', '浏览…', 'Sfoglia...'), t('Reset', '重置', 'Ripristina'), t('Browse...', '浏览…', 'Sfoglia...')]);
       assert(target.some(n => n.props.children === t('Start In', '起始位置', 'Avvia in') + ': /g'));

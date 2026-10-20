@@ -20,32 +20,33 @@ const ON_UNLESS_0 = { ROSETTA_ADVERTISE_AVX: true };
 const PANEL_KEYS = ['CX_GRAPHICS_BACKEND', 'MTL_HUD_ENABLED', 'D3DM_ENABLE_METALFX', 'DXMT_ENABLE_NVEXT',
   'DXMT_METALFX_SPATIAL_SWAPCHAIN', 'DXMT_CONFIG', 'ROSETTA_ADVERTISE_AVX', 'WINEMSYNC', 'NOTPROTON_RETINA',
   'NOTPROTON_RAW_CONTROLLERS', 'NOTPROTON_DISABLE_HIDRAW'];
-const OTHER_KEYS = ['WINEDEBUG', 'DXVK_HUD', 'FOO', 'NOTPROTON_EXE', 'NOTPROTON_START_DIR'];
+const OTHER_KEYS = ['WINEDEBUG', 'DXVK_HUD', 'FOO', 'SteamAppId', 'STEAM_COMPAT_DATA_PATH'];
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'np-shell-'));
+const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'np-shell-')));
 const probe = path.join(dir, 'probe');
 fs.writeFileSync(probe, '#!' + process.execPath + '\n' +
   `const k=${JSON.stringify(PANEL_KEYS.concat(OTHER_KEYS))};const e={};` +
   'k.forEach(n=>{if(n in process.env)e[n]=process.env[n]});' +
   'require("fs").appendFileSync(process.env.NP_PROBE_OUT,' +
-  'JSON.stringify({argv:process.argv.slice(2),env:e})+"\\n");\n', { mode: 0o755 });
+  'JSON.stringify({argv:process.argv.slice(2),env:e,cwd:process.cwd()})+"\\n");\n', { mode: 0o755 });
 fs.writeFileSync(path.join(dir, 'gamemoderun'), '#!/bin/sh\nexec "$@"\n', { mode: 0o755 });
 
 const quote = s => "'" + s.replace(/'/g, "'\\''") + "'";
-const COMMAND = quote(probe) + " 'game.exe'";
+// What Steam logs for %command%: the tool, its verb, then the game.
+const COMMAND = quote(probe) + " waitforexitandrun  'game.exe'";
 
-function steamLine(options) {
+function steamLine(options, command = COMMAND) {
   const o = options.trim();
-  return /%command%/i.test(o) ? o.replace(/%command%/gi, () => COMMAND) : COMMAND + (o ? ' ' + o : '');
+  return /%command%/i.test(o) ? o.replace(/%command%/gi, () => command) : command + (o ? ' ' + o : '');
 }
 
 const shells = ['/bin/sh', '/bin/dash'].filter(s => fs.existsSync(s));
 
-function launch(shell, options) {
+function launch(shell, options, command) {
   const out = path.join(dir, 'runs');
   fs.rmSync(out, { force: true });
-  spawnSync(shell, ['-c', steamLine(options)], {
-    env: { PATH: dir + ':/usr/bin:/bin', HOME: process.env.HOME, NP_PROBE_OUT: out },
+  spawnSync(shell, ['-c', steamLine(options, command)], {
+    env: { PATH: dir + ':/usr/bin:/bin', HOME: process.env.HOME, NP_PROBE_OUT: out, SteamAppId: '287700', STEAM_COMPAT_DATA_PATH: '/steam/prefix/287700' },
     cwd: dir, timeout: 10000, stdio: 'ignore',
   });
   return fs.existsSync(out) ? fs.readFileSync(out, 'utf8').trim().split('\n').map(JSON.parse) : [];
@@ -174,9 +175,6 @@ const CASES = [
   'MTL_HUD_ENABLED=1 "%command%"',
   'MTL_HUD_ENABLED=1 \\%command%',
   '  MTL_HUD_ENABLED=1   %command%  --offline  ',
-  "NOTPROTON_EXE='/Users/test/Games/Mod Engine 2/launchmod_eldenring.bat' %command%",
-  "NOTPROTON_EXE='/Users/test/Jeux/Café \"d\" l'\\''été/ゲーム.exe' MTL_HUD_ENABLED=1 %command% -t er -c 'Z:\\a b\\c.toml'",
-  "CX_GRAPHICS_BACKEND=dxmt NOTPROTON_EXE=/g/AssassinsCreed_Dx10.exe NOTPROTON_START_DIR='/g/a b' %command% --offline",
 ];
 
 let failed = 0;
@@ -214,11 +212,17 @@ for (const shell of shells) {
 }
 
 // The Executable rows, driven through Steam's file dialog and read back from what the game gets.
-const TARGETS = ['/Users/test/Games/Mod Engine 2/launchmod_eldenring.bat',
-  "/Users/test/Jeux/Café \"d\" l'été/ゲーム.EXE", '/g/AssassinsCreed_Dx10.exe', '/g/$HOME `id` \\x.bat'];
+const TARGETS = ['Mod Engine 2/launchmod_eldenring.bat',
+  `Jeux/Café "d" l'été/ゲーム.EXE`, 'AssassinsCreed_Dx10.exe', '$HOME `id` \\x.bat',
+  'braces{a,b}[*]?/%command%\n.exe'].map(p => path.join(dir, p));
+for (const exe of TARGETS) fs.mkdirSync(path.dirname(exe), { recursive: true });
+const startDir = path.join(dir, 'start in/ü');
+fs.mkdirSync(startDir, { recursive: true });
+const otherExe = path.join(dir, 'other.exe');
 const STARTS = ['', '-windowed', 'MTL_HUD_ENABLED=1 %command% --offline',
   'WINEDEBUG="a b" gamemoderun %command% -t er',
-  '"/Users/test/Games/Mod Engine 2/launchmod_eldenring.bat"'];
+  '"/Users/test/Games/Mod Engine 2/launchmod_eldenring.bat"',
+  `bash -c 'exec "\${@/game.exe/launchmod_eldenring.bat}"' -- %command%`];
 for (const shell of shells) {
   for (const form of Object.keys(FORMS)) {
     const t = runner(`${path.basename(shell)} ${form} executable`);
@@ -241,46 +245,80 @@ for (const shell of shells) {
         const run = launch(shell, picked);
         t.ok(run.length === before.length && run.length > 0, `${what}: the game runs once -> ${JSON.stringify(picked)}`);
         if (!run.length || run.length !== before.length) continue;
-        t.ok(run[0].env.NOTPROTON_EXE === exe && !('NOTPROTON_START_DIR' in run[0].env),
-             `${what}: the run script gets NOTPROTON_EXE ${JSON.stringify(run[0].env.NOTPROTON_EXE)}`);
-        t.ok(JSON.stringify(run[0].argv) === JSON.stringify(before[0].argv),
+        t.ok(run[0].argv[1] === exe && run[0].cwd === path.dirname(exe),
+             `${what}: tool receives the chosen target and its working directory`);
+        t.ok(JSON.stringify(run[0].argv) === JSON.stringify(before[0].argv.map((a, i) => i === 1 ? exe : a)),
              `${what}: game arguments kept ${JSON.stringify(run[0].argv)}`);
-        t.ok(['WINEDEBUG', 'MTL_HUD_ENABLED'].every(k => run[0].env[k] === before[0].env[k]),
+        t.ok(['WINEDEBUG', 'MTL_HUD_ENABLED', 'SteamAppId', 'STEAM_COMPAT_DATA_PATH'].every(k => run[0].env[k] === before[0].env[k]),
              `${what}: other settings kept`);
 
+        if (start === STARTS[0] && exe === TARGETS[0]) {
+          t.ok(launch(shell, picked, quote(probe) + " run 'game.exe'").length === 0,
+               `${what}: without waitforexitandrun nothing launches`);
+          v = view(form, picked);
+          v.toggles.MTL_HUD_ENABLED.props.onChange(true);
+          const toggled = v.written.at(-1).opts;
+          const toggleRun = launch(shell, toggled);
+          t.ok(toggleRun.length === 1 && toggleRun[0].env.MTL_HUD_ENABLED === '1' &&
+               toggleRun[0].argv[1] === exe, `${what}: settings edits retain the generated wrapper`);
+          const F = panel(emit, form, undefined, { fexTools: ['fex'] });
+          F.pick(details('CX_GRAPHICS_BACKEND=d3dmetal ' + toggled), 'fex');
+          const fexRun = launch(shell, F.written.at(-1).opts);
+          t.ok(fexRun.length === 1 && !fexRun[0].env.CX_GRAPHICS_BACKEND &&
+               fexRun[0].argv[1] === exe, `${what}: FEX cleanup retains the generated wrapper`);
+          v = view(form, picked);
+          const badDir = click(v, 2, path.join(dir, 'missing'));
+          t.ok(launch(shell, badDir).length === 0, `${what}: failed cd does not launch a game`);
+        }
         v = view(form, picked);
         t.ok(v.buttons.length === 3, `${what}: Reset and Start In show once a target is set`);
         const folder = exe.replace(/\/[^/]*$/, '');
-        const withDir = click(v, 2, '/tmp/start in/ü');
+        const withDir = click(v, 2, startDir);
         t.ok(v.dialogs[0].bChooseDirectory === true && v.dialogs[0].strInitialFile === folder,
              `${what}: Start In opens on the target's folder`);
         const dirRun = launch(shell, withDir);
-        t.ok(dirRun.length && dirRun[0].env.NOTPROTON_START_DIR === '/tmp/start in/ü' &&
-             dirRun[0].env.NOTPROTON_EXE === exe, `${what}: Start In is set and the target kept`);
+        t.ok(dirRun.length && dirRun[0].cwd === startDir && dirRun[0].argv[1] === exe, `${what}: Start In is set and the target kept`);
 
         v = view(form, withDir);
         const cancelled = click(v, 0, undefined) === null;
         t.ok(cancelled && v.buttons.length === 4, `${what}: both rows offer Reset once both are set`);
         const dirReset = launch(shell, click(v, 3));
-        t.ok(dirReset.length && !('NOTPROTON_START_DIR' in dirReset[0].env) && dirReset[0].env.NOTPROTON_EXE === exe,
+        t.ok(dirReset.length && dirReset[0].cwd === path.dirname(exe) && dirReset[0].argv[1] === exe,
              `${what}: resetting Start In keeps the target`);
 
         v = view(form, withDir);
-        const again = launch(shell, click(v, 0, '/g/other.exe'));
-        t.ok(again.length && again[0].env.NOTPROTON_EXE === '/g/other.exe' && !('NOTPROTON_START_DIR' in again[0].env),
+        const again = launch(shell, click(v, 0, otherExe));
+        t.ok(again.length && again[0].argv[1] === otherExe && again[0].cwd === dir,
              `${what}: choosing another target drops the old Start In`);
 
         v = view(form, withDir);
         const reset = click(v, 1);
         const resetRun = launch(shell, reset);
         t.ok(resetRun.length === before.length && resetRun.every((r, n) =>
-               !('NOTPROTON_EXE' in r.env) && !('NOTPROTON_START_DIR' in r.env) &&
-               JSON.stringify(r.argv) === JSON.stringify(before[n].argv)),
+               r.cwd === before[n].cwd && JSON.stringify(r.argv) === JSON.stringify(before[n].argv)),
              `${what}: Reset launches the game as before -> ${JSON.stringify(reset)}`);
+        t.ok(reset === (/%command%/.test(start) || !start ? start : '%command% ' + start),
+             `${what}: Reset restores the original text`);
       }
     }
     failed += t.failed;
   }
+}
+
+// A %command% the wrapper cannot stand in for is left alone rather than rewritten.
+for (const form of Object.keys(FORMS)) {
+  const t = runner(`${form} executable, unsupported options`);
+  for (const start of ['MTL_HUD_ENABLED=1 "%command%"', 'MTL_HUD_ENABLED=1 \\%command%',
+                       "bash -c 'run %command%'", '# %command%']) {
+    const v = view(form, start);
+    v.files.push(otherExe);
+    v.buttons[0].props.onClick();
+    t.ok(v.written.length === 0, `${JSON.stringify(start)}: Browse writes nothing`);
+  }
+  const lookalike = "sh -c 'exec \"$@\"' sh '/g/a.exe' '' %command%";
+  const v = view(form, lookalike);
+  t.ok(v.buttons.length === 1, 'a hand-written wrapper is not read as a chosen executable');
+  failed += t.failed;
 }
 
 fs.rmSync(dir, { recursive: true, force: true });

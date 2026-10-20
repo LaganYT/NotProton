@@ -1422,22 +1422,6 @@ if [ "$foreground" = 0 ]; then
   exit $status
 fi
 
-# The Compatibility panel sets NOTPROTON_EXE to run another program in place of the game, with
-# the game's arguments, prefix and app ID. It starts in that program's folder unless
-# NOTPROTON_START_DIR says otherwise, as a mod launcher's .bat expects.
-game_cwd="$(pwd)"
-if [ -n "${NOTPROTON_EXE:-}" ]; then
-  game_cwd="${NOTPROTON_START_DIR:-$(dirname -- "$NOTPROTON_EXE")}"
-  if [ "${NOTPROTON_EXE#/}" = "$NOTPROTON_EXE" ] || [ ! -f "$NOTPROTON_EXE" ] || [ ! -d "$game_cwd" ]; then
-    echo "=== launch target missing: [$NOTPROTON_EXE] start in [$game_cwd] ===" >> "$log" 2>&1 || true
-    show_alert "The chosen executable could not be found" "Check the Executable setting under Properties > Compatibility, or reset it to launch the game normally."
-    exit 1
-  fi
-  echo "=== launching $NOTPROTON_EXE in place of $target, from $game_cwd ===" >> "$log" 2>&1 || true
-  shift
-  set -- "$NOTPROTON_EXE" "$@"
-fi
-
 # Fixes CrossOver window focus issues
 steam_root="$(dirname "$(dirname "$(dirname "$STEAM_COMPAT_DATA_PATH")")")"
 manifest="$steam_root/steamapps/appmanifest_$app_id.acf"
@@ -1626,6 +1610,7 @@ terminate() {
 }
 trap terminate TERM INT HUP
 
+game_cwd="$(pwd)"
 if [ -n "$STEAM_DYLD_INSERT_LIBRARIES" ]; then
   echo "=== overlay injected from $STEAM_DYLD_INSERT_LIBRARIES ===" >> "$log" 2>&1 || true
 else
