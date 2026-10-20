@@ -315,6 +315,8 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "children:npL(\"Browse...\",\"浏览…\",\"Sfoglia...\")})," \
     "v&&(0," RT ".jsx)(" BARREL ".$n,{className:\"MSCXButton\",onClick:()=>s(ks.map(k=>[k,\"\"]))," \
     "children:npL(\"Reset\",\"重置\",\"Ripristina\")})]},k)," \
+    "D=(k,l)=>(0," RT ".jsx)(" BARREL ".Yh,{className:\"MSCXRow\",label:l," \
+    "checked:\"0\"!==g(k),onChange:v=>s([[k,v?\"\":\"0\"]])},k)," \
     "bv=g(\"CX_GRAPHICS_BACKEND\"),b=fex&&\"d3dmetal\"===bv?\"\":bv," \
     "dm=!fex&&(\"\"===b||\"d3dmetal\"===b)," \
     "dx=\"\"===b||\"dxmt\"===b," \
@@ -349,7 +351,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "T([\"MTL_HUD_ENABLED\"],npL(\"Metal HUD\",\"Metal 性能监视器\",\"Metal HUD\"),\"1\")," \
     "dm&&T([\"D3DM_ENABLE_METALFX\"],\"DLSS\",\"1\")," \
     "\"dxmt\"===b&&T([\"DXMT_ENABLE_NVEXT\"],\"DLSS\",\"1\")," \
-    "!fex&&T([\"ROSETTA_ADVERTISE_AVX\"],npL(\"Advertise AVX2 to Rosetta\",\"向 Rosetta 声明 AVX2 支持\",\"Segnala AVX2 a Rosetta\"),\"1\",\"0\")," \
+    "!fex&&D(\"ROSETTA_ADVERTISE_AVX\",npL(\"Advertise AVX2 to Rosetta\",\"向 Rosetta 声明 AVX2 支持\",\"Segnala AVX2 a Rosetta\"))," \
     "T([\"WINEMSYNC\"],\"MSync\",\"1\",\"0\")," \
     "T([\"NOTPROTON_RETINA\"],npL(\"High Resolution\",\"高分辨率\",\"Alta risoluzione\"),\"1\",\"0\")" \
     "]},\"gfx\")," \
@@ -375,7 +377,10 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "ex&&P(sd,npL(\"Start In\",\"起始位置\",\"Avvia in\")+\": \"+(sd||exd)," \
     "{strTitle:npL(\"Start In\",\"起始位置\",\"Avvia in\"),strInitialFile:sd||exd,bChooseDirectory:!0}," \
     "p=>[[\"NOTPROTON_START_DIR\",p]],[\"NOTPROTON_START_DIR\"],\"dir\")" \
-    "]},\"exe\")" \
+    "]},\"exe\")," \
+    "fex&&(0," RT ".jsx)(" BARREL ".XY,{label:\"FEX\"," \
+    "children:D(\"FEX_X87REDUCEDPRECISION\"," \
+    "\"Reduced x87 precision (Reducing precision improves game performance, is enabled by default in CrossOver Preview)\")},\"fex\")" \
     "]})})}"
 
 #define NP_CX_OPTIONS_CAPTURE(RT, BARREL) \
